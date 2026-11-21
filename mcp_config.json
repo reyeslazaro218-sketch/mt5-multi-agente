@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mt5-bridge": {
+      "command": "python",
+      "args": ["C:/Users/reyes.LAPTOP-UFF9DRSE/mt5-multi-agente/mt5_server.py"],
+      "cwd": "C:/Users/reyes.LAPTOP-UFF9DRSE/mt5-multi-agente"
+    }
+  }
+}
