@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+
+# MetaTrader 5
+*.ex5
+*.log
+
+# Logs (se conserva la carpeta con .gitkeep)
+logs/*
+!logs/.gitkeep
+
+# Configuración local con credenciales
+python/config/*.local.*
+python/config/secrets.*
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
