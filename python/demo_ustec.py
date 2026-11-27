@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 
-from python.agentes.riesgo import riesgo_disponible
+from python.comunicacion.control_demo import ControlDemo
 from python.comunicacion.cuenta_mt5 import CuentaMT5
 from python.config import settings
 from python.demo_ventas_h1 import demo_autorizada, permisos
@@ -142,7 +142,8 @@ def uncertain(mt5, result):
     )
 
 
-def submit(mt5, login, state, reservation, order, reference, event_ts):
+def submit(mt5, login, state, reservation, order, reference, event_ts, control=None):
+    control = control or ControlDemo(state)
     check = mt5.order_check(order)
     if check is None or check.retcode != 0:
         log.info("OrderCheck vetó la entrada: %s", getattr(check, "retcode", None))
@@ -159,11 +160,11 @@ def submit(mt5, login, state, reservation, order, reference, event_ts):
     if (positions != () or orders != () or not 0 <= age <= 2000
             or not open_at + 15 * MINUTE <= now < open_at + 90 * MINUTE
             or latest_price != order["price"] or account.equity < reference
-            or not riesgo_disponible(account, state)):
+            or not control.riesgo(account)):
         log.info("Veto: cambió la cotización, el patrimonio o la exposición antes de enviar")
         return
     reserve(reservation, {"sent_at": time.time(), "order": order})
-    result = mt5.order_send(order)
+    result = control.enviar(mt5, order)
     result_log("Entrada USTEC", result)
     if uncertain(mt5, result):
         reserve(state / "entrada_incierta.json", {"session": reservation.name})
@@ -229,7 +230,7 @@ def quote_stream(mt5, cursor, consumed, now_ms):
     return rows
 
 
-def run(adapter, login, state, sending):
+def run(adapter, login, state, sending, control):
     mt5 = adapter.mt5
     info = mt5.symbol_info(SYMBOL)
     previous_session = None
@@ -261,7 +262,7 @@ def run(adapter, login, state, sending):
             account, positions, _ = snapshot
             if not demo_autorizada(mt5, account, login):
                 raise RuntimeError("Cambió la cuenta demo autorizada")
-            riesgo_disponible(account, state)
+            control.riesgo(account)
             positions = [p for p in positions if p.symbol == SYMBOL and p.magic == MAGIC]
             tickets = tuple(p.ticket for p in positions)
             if tickets != last_positions:
@@ -309,24 +310,28 @@ def run(adapter, login, state, sending):
             log.info("Señal de ruptura fallida USTEC: %s ts=%s", "BUY" if side == 1 else "SELL", ts)
             if not sending:
                 continue
-            snapshot = adapter.snapshot()
-            if snapshot is None:
-                continue
-            account, positions, orders = snapshot
-            if (not demo_autorizada(mt5, account, login) or positions or orders
-                    or not permisos(account, mt5.terminal_info())
-                    or not riesgo_disponible(account, state) or daily.exists() or paused):
-                log.info("Entrada vetada por cuenta, exposición o riesgo")
-                continue
-            quote = mt5.symbol_info_tick(SYMBOL)
-            quote_time = int(clock(time.time())[0].timestamp() * 1000)
-            if not quote or not 0 < quote.bid <= quote.ask or not 0 <= quote_time - quote.time_msc <= 2000:
-                continue
-            order, reason = make_order(mt5, account.equity, info, quote, side, high-low)
-            if order is None:
-                log.info("Entrada vetada: %s", reason)
-                continue
-            submit(mt5, login, state, daily, order, account.equity, ts)
+            with control.entrada() as disponible:
+                if not disponible:
+                    log.info("Entrada vetada: otro envío en curso o pendiente de verificar")
+                    continue
+                snapshot = adapter.snapshot()
+                if snapshot is None:
+                    continue
+                account, positions, orders = snapshot
+                if (not demo_autorizada(mt5, account, login) or positions or orders
+                        or not permisos(account, mt5.terminal_info())
+                        or not control.riesgo(account) or daily.exists() or paused):
+                    log.info("Entrada vetada por cuenta, exposición o riesgo")
+                    continue
+                quote = mt5.symbol_info_tick(SYMBOL)
+                quote_time = int(clock(time.time())[0].timestamp() * 1000)
+                if not quote or not 0 < quote.bid <= quote.ask or not 0 <= quote_time - quote.time_msc <= 2000:
+                    continue
+                order, reason = make_order(mt5, account.equity, info, quote, side, high-low)
+                if order is None:
+                    log.info("Entrada vetada: %s", reason)
+                    continue
+                submit(mt5, login, state, daily, order, account.equity, ts, control)
             if daily.exists():
                 break
         time.sleep(.25)
@@ -338,6 +343,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--login", type=int, required=True)
     parser.add_argument("--estado", type=Path, required=True)
+    parser.add_argument("--compartido", type=Path)
     parser.add_argument("--enviar", action="store_true")
     args = parser.parse_args()
     args.estado.mkdir(parents=True, exist_ok=True)
@@ -361,7 +367,7 @@ def main():
                                 and abs(time.time()*1000 - quote.time_msc) < 15_000):
                 raise RuntimeError("Las marcas de tiempo del bróker no coinciden con la sesión configurada")
             log.info("Prueba ruptura fallida USTEC iniciada enviar=%s lote_min=%.2f", args.enviar, info.volume_min)
-            run(adapter, args.login, args.estado, args.enviar)
+            run(adapter, args.login, args.estado, args.enviar, ControlDemo(args.estado, args.compartido))
         finally:
             if adapter.mt5 is not None:
                 adapter.mt5.shutdown()

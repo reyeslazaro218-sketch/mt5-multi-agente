@@ -87,3 +87,11 @@ se omite la señal.
 El archivo `DETENER` dentro de la carpeta de estado detiene este proceso.
 Los stops y objetivos siguen en MT5. Mientras el proceso esté apagado,
 el cierre local por tiempo queda suspendido.
+
+### Ejecución conjunta de los perfiles demo
+
+Arranca los perfiles USTEC y XAUUSD desde esta misma revisión y pasa el mismo
+directorio con `--compartido RUTA` en ambos. Cada perfil necesita su propio
+directorio `--estado`. Los dos aplican un freno diario común de 2% y solo
+permiten una exposición a la vez. Si queda `orden_compartida.json` en la
+carpeta común, se bloquean nuevas entradas hasta conciliar el estado en MT5.

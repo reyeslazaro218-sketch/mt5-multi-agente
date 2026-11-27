@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from python.agentes.analisis import AgenteAnalisis, ema
-from python.agentes.riesgo import riesgo_disponible
+from python.comunicacion.control_demo import ControlDemo
 from python.agentes.senal import AgenteSenal
 from python.comunicacion.cuenta_mt5 import CuentaMT5
 from python.config import settings
@@ -47,7 +47,7 @@ def confirmar_venta(senal, h1, cierre_m5):
     return precios[-1] < ema(precios, 50)
 
 
-def entrada(mt5, cuenta, orden, login, vela, pendiente, offset_broker):
+def entrada(mt5, cuenta, orden, login, vela, pendiente, offset_broker, control=None):
     tick = mt5.symbol_info_tick(SYMBOL)
     info = mt5.symbol_info(SYMBOL)
     if tick is None or info is None or abs(time.time() + offset_broker - tick.time) > 15:
@@ -90,6 +90,7 @@ def entrada(mt5, cuenta, orden, login, vela, pendiente, offset_broker):
         return
     posiciones, ordenes = mt5.positions_get(), mt5.orders_get()
     if (posiciones is None or ordenes is None
+            or (control is not None and control.shared and (posiciones or ordenes))
             or len(posiciones) + len(ordenes) >= settings.MAX_POSICIONES_ABIERTAS
             or any(p.symbol == SYMBOL for p in (*posiciones, *ordenes))
             or not 0 < -perdida <= actual.equity * settings.RIESGO_POR_OPERACION_PCT / 100):
@@ -99,7 +100,7 @@ def entrada(mt5, cuenta, orden, login, vela, pendiente, offset_broker):
         json.dump({"vela": vela, "login": login, "solicitud": solicitud}, archivo)
         archivo.flush()
         os.fsync(archivo.fileno())
-    resultado = mt5.order_send(solicitud)
+    resultado = control.enviar(mt5, solicitud) if control else mt5.order_send(solicitud)
     if resultado is None or resultado.retcode in (
         mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_CONNECTION,
     ):
@@ -120,7 +121,7 @@ def permisos(cuenta, terminal):
             and not terminal.tradeapi_disabled and cuenta.trade_allowed and cuenta.trade_expert)
 
 
-def ejecutar(adapter, login, estado, enviar):
+def ejecutar(adapter, login, estado, enviar, control):
     pendiente = estado / "orden_pendiente.json"
     ultima_vela = None
     ultima_posicion = None
@@ -137,7 +138,7 @@ def ejecutar(adapter, login, estado, enviar):
         if not demo_autorizada(mt5, lectura[0], login):
             raise RuntimeError("Cambió la cuenta demo autorizada")
         cuenta, posiciones, ordenes = lectura
-        permitida = riesgo_disponible(cuenta, estado)
+        permitida = control.riesgo(cuenta)
         propios = tuple(p.ticket for p in posiciones if p.magic == MAGIC)
         if propios != ultima_posicion:
             log.info("Posiciones de la prueba: %s", propios)
@@ -156,20 +157,34 @@ def ejecutar(adapter, login, estado, enviar):
                         h1 = mt5.copy_rates_from_pos(SYMBOL, mt5.TIMEFRAME_H1, 1, 250)
                         if confirmar_venta(cruce, h1, cierre):
                             log.info("Señal SELL confirmada por EMA50 H1: %s", cruce.motivo)
-                            if (enviar and permitida and not pendiente.exists()
-                                    and len(posiciones) + len(ordenes) < settings.MAX_POSICIONES_ABIERTAS
-                                    and not any(p.symbol == SYMBOL for p in (*posiciones, *ordenes))
-                                    and permisos(cuenta, mt5.terminal_info())):
-                                plan = adapter.preparar(cruce, cuenta.equity)
-                                if plan is not None:
-                                    entrada(mt5, cuenta, plan, login, ts, pendiente, adapter.offset_broker)
+                            with control.entrada() as disponible:
+                                lectura = adapter.snapshot() if enviar and disponible else None
+                                if lectura is None:
+                                    log.info("Entrada omitida: sin cuenta o envío disponible")
                                 else:
-                                    log.info("Veto: sin lote válido dentro del presupuesto")
-                            else:
-                                log.info("Entrada omitida por estado de cuenta, permisos o riesgo")
+                                    ejecutar_venta(adapter, login, lectura, cruce, ts, cierre,
+                                                   pendiente, control)
                         else:
                             log.info("Cruce SELL descartado por filtro H1")
         time.sleep(3)
+
+
+def ejecutar_venta(adapter, login, lectura, cruce, ts, cierre, pendiente, control):
+    cuenta, posiciones, ordenes = lectura
+    mt5 = adapter.mt5
+    if (not demo_autorizada(mt5, cuenta, login) or not permisos(cuenta, mt5.terminal_info())
+            or pendiente.exists() or not control.riesgo(cuenta)
+            or not 0 <= time.time() + adapter.offset_broker - cierre <= 30
+            or (control.shared and (posiciones or ordenes))
+            or len(posiciones) + len(ordenes) >= settings.MAX_POSICIONES_ABIERTAS
+            or any(p.symbol == SYMBOL for p in (*posiciones, *ordenes))):
+        log.info("Entrada omitida por estado de cuenta, permisos o riesgo")
+        return
+    plan = adapter.preparar(cruce, cuenta.equity)
+    if plan is None:
+        log.info("Veto: sin lote válido dentro del presupuesto")
+        return
+    entrada(mt5, cuenta, plan, login, ts, pendiente, adapter.offset_broker, control)
 
 
 def main():
@@ -178,6 +193,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--login", type=int, required=True)
     parser.add_argument("--estado", type=Path, required=True)
+    parser.add_argument("--compartido", type=Path)
     parser.add_argument("--offset-broker", type=int, required=True, help="Segundos del servidor respecto a UTC")
     parser.add_argument("--enviar", action="store_true")
     args = parser.parse_args()
@@ -197,7 +213,7 @@ def main():
             if not mt5.symbol_select(SYMBOL, True):
                 raise RuntimeError("XAUUSD no disponible")
             log.info("Prueba XAUUSD M5 ventas H1 iniciada en %s enviar=%s", SERVER, args.enviar)
-            ejecutar(adapter, args.login, args.estado, args.enviar)
+            ejecutar(adapter, args.login, args.estado, args.enviar, ControlDemo(args.estado, args.compartido))
         finally:
             if adapter.mt5 is not None:
                 adapter.mt5.shutdown()
