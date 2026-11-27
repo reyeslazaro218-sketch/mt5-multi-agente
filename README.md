@@ -46,3 +46,11 @@ evaluación de entrada del día UTC, con el mayor de balance y patrimonio.
 Si se pierde la respuesta de una orden, se conserva `logs/orden_enviada.json`
 y se detienen nuevas entradas. Comprueba órdenes, historial y posiciones en
 MT5 antes de resolver manualmente ese registro con el proceso detenido.
+
+### Perfil demo XAUUSD M5
+
+Esta rama usa velas cerradas M5 de XAUUSD, EMA 9/21, RSI 14 y salidas del
+bróker con SL a 1,5 ATR y TP a 2,5 ATR. Recompila el EA y utiliza el
+orquestador de la misma rama. Ambos componentes deben usar el perfil M5.
+El EA obtiene M5 del símbolo configurado independientemente del gráfico
+al que se adjunta.

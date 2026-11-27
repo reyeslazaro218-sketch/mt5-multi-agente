@@ -32,7 +32,8 @@ class Orquestador:
         self.servidor.on_respuesta = self.on_respuesta
 
     def on_dato(self, msg: dict) -> None:
-        if msg["tipo"] != "vela":
+        if (msg["tipo"] != "vela" or msg.get("timeframe") != settings.TIMEFRAME
+                or msg.get("simbolo") not in settings.SIMBOLOS_BROKER.values()):
             return
         a = self.analisis.procesar(msg)
         if a is None:

@@ -8,15 +8,11 @@ Ajusta SIMBOLOS_BROKER a los nombres reales de tu Market Watch en MT5.
 MODO_DEMO = True  # NO cambiar a False hasta validar en demo de forma sostenida
 
 # --- Mercado -----------------------------------------------------------
-TIMEFRAME = "M1"
+TIMEFRAME = "M5"
+VELA_MS = 5 * 60_000
 
 # Nombre lógico -> nombre real en el broker
-SIMBOLOS_BROKER = {
-    "BITCOIN": "BTCUSD",
-    "ORO": "XAUUSD",
-    "EURUSD": "EURUSD",
-    "NAS100": "NAS100",
-}
+SIMBOLOS_BROKER = {"ORO": "XAUUSD"}
 
 # --- Puente ZeroMQ -----------------------------------------------------
 ZMQ_HOST = "127.0.0.1"
@@ -28,7 +24,7 @@ RIESGO_POR_OPERACION_PCT = 0.5
 PERDIDA_MAXIMA_DIARIA_PCT = 2.0
 MAX_POSICIONES_ABIERTAS = 4
 
-# --- Estrategia EMA + RSI (M1) -----------------------------------------
+# --- Estrategia EMA + RSI (M5) -----------------------------------------
 EMA_RAPIDA = 9
 EMA_LENTA = 21
 RSI_PERIODO = 14

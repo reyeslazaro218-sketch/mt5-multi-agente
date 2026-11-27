@@ -7,6 +7,7 @@ from python.agentes.analisis import AgenteAnalisis, rsi
 from python.comunicacion import mensajes
 from python.comunicacion.servidor_zmq import ServidorZMQ
 from python.orquestador import Orquestador
+from python.config import settings
 
 
 def test_rechazo_libera_solicitud_y_no_reenvia_orden(tmp_path):
@@ -48,12 +49,23 @@ def test_freno_diario_persiste(tmp_path):
 
 def test_duplicados_huecos_y_rsi_plano():
     agente = AgenteAnalisis()
-    vela = {"simbolo": "EURUSD", "ts": 60_000}
+    vela = {"simbolo": "XAUUSD", "ts": settings.VELA_MS}
     agente.procesar(vela)
     agente.procesar(vela)
-    assert len(agente.velas["EURUSD"]) == 1
-    agente.procesar(dict(vela, ts=120_000))
-    assert len(agente.velas["EURUSD"]) == 2
-    agente.procesar(dict(vela, ts=240_000))
-    assert len(agente.velas["EURUSD"]) == 1
+    assert len(agente.velas["XAUUSD"]) == 1
+    agente.procesar(dict(vela, ts=2 * settings.VELA_MS))
+    assert len(agente.velas["XAUUSD"]) == 2
+    agente.procesar(dict(vela, ts=4 * settings.VELA_MS))
+    assert len(agente.velas["XAUUSD"]) == 1
     assert rsi([1.] * 20, 14) == 50
+
+
+def test_perfil_demo_filtra_marco_y_simbolo():
+    bot = Orquestador(servidor=Mock())
+    bot.analisis.procesar = Mock(return_value=None)
+    vela = {"tipo": "vela", "simbolo": "XAUUSD", "timeframe": "M5"}
+    bot.on_dato(dict(vela, timeframe="M1"))
+    bot.on_dato(dict(vela, simbolo="EURUSD"))
+    bot.analisis.procesar.assert_not_called()
+    bot.on_dato(vela)
+    bot.analisis.procesar.assert_called_once_with(vela)

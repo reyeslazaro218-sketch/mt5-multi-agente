@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //| EA_Orquestador.mq5                                               |
-//| Publica ticks y velas M1 a Python (ZeroMQ PUB) y consulta        |
+//| Publica ticks y velas M5 a Python (ZeroMQ PUB) y consulta        |
 //| órdenes pendientes (ZeroMQ REQ). Solo opera en cuenta DEMO.      |
 //|                                                                  |
 //| Dependencia: mql-zmq (https://github.com/dingmaotu/mql-zmq)      |
@@ -21,7 +21,7 @@ input long   InpMagic         = 20260101;
 input int    InpPollMs        = 200;
 
 // Símbolos lógicos: ajusta a los nombres de tu broker en Market Watch
-string g_simbolos[] = {"BTCUSD", "XAUUSD", "EURUSD", "NAS100"};
+string g_simbolos[] = {"XAUUSD"};
 
 Context  *g_ctx;
 Socket   *g_pub;
@@ -89,18 +89,18 @@ void PublicarDatos()
       ZmqMsg m(tick);
       g_pub.send(m, true);
 
-      // Vela M1 cerrada (índice 1)
-      datetime tv = iTime(s, PERIOD_M1, 1);
+      // Vela M5 cerrada (índice 1)
+      datetime tv = iTime(s, PERIOD_M5, 1);
       if(tv != 0 && tv != g_ultimaVela[i])
       {
          g_ultimaVela[i] = tv;
          string vela = StringFormat(
-            "{\"tipo\":\"vela\",\"version\":1,\"ts\":%I64d,\"simbolo\":\"%s\",\"timeframe\":\"M1\","
+            "{\"tipo\":\"vela\",\"version\":1,\"ts\":%I64d,\"simbolo\":\"%s\",\"timeframe\":\"M5\","
             "\"apertura\":%.8f,\"maximo\":%.8f,\"minimo\":%.8f,\"cierre\":%.8f,\"volumen\":%I64d}",
             (long)tv * 1000, s,
-            iOpen(s, PERIOD_M1, 1), iHigh(s, PERIOD_M1, 1),
-            iLow(s, PERIOD_M1, 1),  iClose(s, PERIOD_M1, 1),
-            iTickVolume(s, PERIOD_M1, 1));
+            iOpen(s, PERIOD_M5, 1), iHigh(s, PERIOD_M5, 1),
+            iLow(s, PERIOD_M5, 1),  iClose(s, PERIOD_M5, 1),
+            iTickVolume(s, PERIOD_M5, 1));
          ZmqMsg mv(vela);
          g_pub.send(mv, true);
       }
@@ -149,6 +149,7 @@ void ConsultarOrdenes()
       && AccountInfoInteger(ACCOUNT_LOGIN) == (long)ExtraerNumero(txt, "cuenta")
       && AccountInfoString(ACCOUNT_SERVER) == ExtraerTexto(txt, "servidor")
       && emitida > 0 && ahora >= emitida - 1000 && ahora - emitida < 3000
+      && simbolo == g_simbolos[0]
       && lote > 0 && sl > 0 && tp > 0 && (lado == "BUY" || lado == "SELL");
    int retcode = 0;
    ulong ticket = 0;

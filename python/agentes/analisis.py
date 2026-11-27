@@ -1,4 +1,4 @@
-"""Agente de análisis: acumula velas M1 por símbolo y calcula indicadores."""
+"""Agente de análisis: acumula velas de la temporalidad configurada por símbolo y calcula indicadores."""
 from collections import deque
 from typing import Optional
 
@@ -61,7 +61,7 @@ class AgenteAnalisis(Agente):
             delta = vela["ts"] - buf[-1]["ts"]
             if delta <= 0:
                 return None
-            if delta != 60_000:
+            if delta != settings.VELA_MS:
                 buf.clear()
         buf.append(vela)
         if len(buf) < self.minimo_velas:
