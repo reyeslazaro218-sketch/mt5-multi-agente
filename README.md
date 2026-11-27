@@ -69,3 +69,21 @@ Para detener la prueba crea un archivo vacío `DETENER` en la carpeta de
 estado. El proceso deja las posiciones existentes bajo sus SL y TP del
 servidor. Si queda un `orden_pendiente.json`, confirma el estado en el
 historial de MT5 antes de reanudar.
+
+### Prueba demo USTEC por ticks
+
+Ejecuta `python -m python.demo_ustec --login LOGIN_DEMO --estado RUTA --enviar`
+con `MT5_PATH` apuntando al terminal de ICMarketsSC-Demo. Excluye
+`--enviar` para registrar señales en observación.
+
+El rango se mide de 09:30 a 09:45 de Nueva York. Una ruptura de dos ticks
+seguida de un retorno al rango dentro de 60 segundos habilita una entrada
+contraria hasta las 11:00. Se admite un intento de envío por sesión. El stop
+usa media amplitud del rango, el objetivo 1,5 R y el cierre por tiempo se
+intenta a los 60 minutos. Los límites de riesgo conservan 0,5% por operación
+y el freno diario de 2%. Si el mínimo del bróker supera el presupuesto,
+se omite la señal.
+
+El archivo `DETENER` dentro de la carpeta de estado detiene este proceso.
+Los stops y objetivos siguen en MT5. Mientras el proceso esté apagado,
+el cierre local por tiempo queda suspendido.
