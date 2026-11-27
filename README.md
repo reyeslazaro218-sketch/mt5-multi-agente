@@ -54,3 +54,18 @@ bróker con SL a 1,5 ATR y TP a 2,5 ATR. Recompila el EA y utiliza el
 orquestador de la misma rama. Ambos componentes deben usar el perfil M5.
 El EA obtiene M5 del símbolo configurado independientemente del gráfico
 al que se adjunta.
+
+### Prueba demo de ventas M5 con filtro H1
+
+`python -m python.demo_ventas_h1 --login LOGIN_DEMO --estado RUTA --offset-broker SEGUNDOS --enviar`
+usa la API de MT5 directamente con la cuenta ICMarketsSC-Demo indicada.
+Define `MT5_PATH` como la ruta a `terminal64.exe`. Elimina `--enviar` para
+probar la lectura y registrar señales sin operar. Usa el desfase observado
+entre los timestamps de MT5 y UTC. Si el reloj cambia, la comprobación de
+frescura veta las entradas hasta ajustar el parámetro.
+
+No ejecutes en paralelo el orquestador de órdenes en la misma cuenta.
+Para detener la prueba crea un archivo vacío `DETENER` en la carpeta de
+estado. El proceso deja las posiciones existentes bajo sus SL y TP del
+servidor. Si queda un `orden_pendiente.json`, confirma el estado en el
+historial de MT5 antes de reanudar.

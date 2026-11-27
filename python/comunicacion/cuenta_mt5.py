@@ -9,7 +9,8 @@ from python.config import settings
 
 
 class CuentaMT5:
-    def __init__(self):
+    def __init__(self, offset_broker=0):
+        self.offset_broker = offset_broker
         self.mt5 = None
         self.identidad = None
 
@@ -41,7 +42,7 @@ class CuentaMT5:
         s = senal.simbolo
         info, tick = mt5.symbol_info(s), mt5.symbol_info_tick(s)
         if (info is None or tick is None or not (0 < tick.bid <= tick.ask)
-                or abs(time.time() - tick.time) > 15 or not math.isfinite(senal.atr) or senal.atr <= 0):
+                or abs(time.time() + self.offset_broker - tick.time) > 15 or not math.isfinite(senal.atr) or senal.atr <= 0):
             return None
         if not (info.trade_tick_size > 0 and info.volume_step > 0):
             return None

@@ -4,7 +4,10 @@ El lote se calcula para arriesgar RIESGO_POR_OPERACION_PCT del balance si
 se toca el SL (distancia = ATR * SL_ATR_MULT). Requiere conocer el valor
 por punto del símbolo, que se configura en settings.VALOR_POR_UNIDAD.
 """
+import json
 import logging
+import math
+from datetime import datetime, timezone
 from typing import Optional
 
 from python.agentes.base import Agente, OrdenAprobada, Senal
@@ -65,3 +68,27 @@ class AgenteRiesgo(Agente):
             sl, tp = s.precio + dist_sl, s.precio - dist_tp
         return OrdenAprobada(s.simbolo, s.lado, round(lote, 2),
                              round(sl, 5), round(tp, 5))
+
+
+def riesgo_disponible(cuenta, estado_dir):
+    if not all(math.isfinite(x) and x > 0 for x in (cuenta.equity, cuenta.balance)):
+        return False
+    estado_dir.mkdir(parents=True, exist_ok=True)
+    path = estado_dir / "riesgo_diario.json"
+    hoy = datetime.now(timezone.utc).date().isoformat()
+    identidad = [cuenta.login, cuenta.server]
+    anterior = json.loads(path.read_text()) if path.exists() else {}
+    estado = dict(anterior)
+    if estado.get("dia") != hoy or estado.get("cuenta") != identidad:
+        estado = {"dia": hoy, "cuenta": identidad,
+                  "base": max(cuenta.equity, cuenta.balance), "bloqueado": False}
+    base = estado["base"]
+    if not math.isfinite(base) or base <= 0:
+        return False
+    if (base - cuenta.equity) / base * 100 >= settings.PERDIDA_MAXIMA_DIARIA_PCT:
+        estado["bloqueado"] = True
+    if estado != anterior:
+        temporal = path.with_suffix(".tmp")
+        temporal.write_text(json.dumps(estado))
+        temporal.replace(path)
+    return not estado["bloqueado"]

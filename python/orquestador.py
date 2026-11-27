@@ -4,15 +4,13 @@ Uso:
     python -m python.orquestador
 """
 import logging
-import json
-import math
-from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from python.agentes.analisis import AgenteAnalisis
 from python.agentes.ejecucion import AgenteEjecucion
 from python.agentes.senal import AgenteSenal
+from python.agentes.riesgo import riesgo_disponible
 from python.comunicacion.servidor_zmq import ServidorZMQ
 from python.comunicacion.cuenta_mt5 import CuentaMT5
 from python.config import settings
@@ -65,25 +63,7 @@ class Orquestador:
                                    servidor=cuenta.server)
 
     def riesgo_disponible(self, cuenta):
-        if not all(math.isfinite(x) and x > 0 for x in (cuenta.equity, cuenta.balance)):
-            return False
-        self.estado_dir.mkdir(parents=True, exist_ok=True)
-        path = self.estado_dir / "riesgo_diario.json"
-        hoy = datetime.now(timezone.utc).date().isoformat()
-        identidad = [cuenta.login, cuenta.server]
-        estado = json.loads(path.read_text()) if path.exists() else {}
-        if estado.get("dia") != hoy or estado.get("cuenta") != identidad:
-            estado = {"dia": hoy, "cuenta": identidad,
-                      "base": max(cuenta.equity, cuenta.balance), "bloqueado": False}
-        base = estado["base"]
-        if not math.isfinite(base) or base <= 0:
-            return False
-        if (base - cuenta.equity) / base * 100 >= settings.PERDIDA_MAXIMA_DIARIA_PCT:
-            estado["bloqueado"] = True
-        temporal = path.with_suffix(".tmp")
-        temporal.write_text(json.dumps(estado))
-        temporal.replace(path)
-        return not estado["bloqueado"]
+        return riesgo_disponible(cuenta, self.estado_dir)
 
     def on_respuesta(self, msg: dict) -> None:
         log.info("Orden %s: ok=%s ticket=%s volumen=%s retcode=%s",
