@@ -41,13 +41,13 @@ def history(mt5, start, end):
     )
 
 
-def opening_range(ticks, start, end):
+def opening_range(ticks, start, end, minimum=1000):
     if ticks is None:
         return None
     ticks = [(int(q["time_msc"]), (float(q["bid"]) + float(q["ask"])) / 2)
              for q in ticks
              if start <= int(q["time_msc"]) < end and 0 < q["bid"] <= q["ask"]]
-    if len(ticks) < 1000 or ticks[0][0] - start > 15_000 or end - ticks[-1][0] > 15_000:
+    if len(ticks) < minimum or ticks[0][0] - start > 15_000 or end - ticks[-1][0] > 15_000:
         return None
     values = [p for _, p in ticks]
     low, high = min(values), max(values)
@@ -55,17 +55,19 @@ def opening_range(ticks, start, end):
 
 
 class FailedBreakout:
-    def __init__(self, low, high, tick_size, fresh_open):
+    def __init__(self, low, high, tick_size, fresh_open, *, buffer=None, return_ms=MINUTE):
         self.low, self.high = low, high
-        self.upper = high + 2 * tick_size
-        self.lower = low - 2 * tick_size
+        buffer = 2 * tick_size if buffer is None else buffer
+        self.upper = high + buffer
+        self.lower = low - buffer
+        self.return_ms = return_ms
         self.inside = fresh_open
         self.armed = {}
 
     def update(self, ts, mid):
         side = 1 if mid >= self.upper else -1 if mid <= self.lower else 0
         if side and self.inside:
-            self.armed[side] = ts + MINUTE
+            self.armed[side] = ts + self.return_ms
         self.inside = side == 0
         for prior, expiry in list(self.armed.items()):
             if ts > expiry:
@@ -84,17 +86,18 @@ def filling(mt5, info):
     return None
 
 
-def make_order(mt5, equity, info, quote, side, width):
+def make_order(mt5, equity, info, quote, side, width, *, symbol=SYMBOL, magic=MAGIC,
+               fee_per_lot=FEE_PER_LOT, target_r=1.5, cost_limit=.20):
     step = info.trade_tick_size
     if not (step > 0 and info.trade_contract_size > 0 and info.volume_step > 0):
         return None, "especificaciones inválidas"
     risk = max(4, math.ceil(width / (2 * step))) * step
     spread = quote.ask - quote.bid
-    if (spread + 2 * step + FEE_PER_LOT / info.trade_contract_size) / risk > 0.20:
-        return None, "coste estimado superior a 0,20 R"
+    if (spread + 2 * step + fee_per_lot / info.trade_contract_size) / risk > cost_limit:
+        return None, f"coste estimado superior a {cost_limit:.2f} R"
     price = quote.ask if side == 1 else quote.bid
     sl = round(round((price - side * risk) / step) * step, info.digits)
-    tp_distance = math.ceil(1.5 * risk / step) * step
+    tp_distance = math.ceil(target_r * risk / step) * step
     tp = round(round((price + side * tp_distance) / step) * step, info.digits)
     position_price = quote.bid if side == 1 else quote.ask
     minimum = info.trade_stops_level * info.point
@@ -102,11 +105,11 @@ def make_order(mt5, equity, info, quote, side, width):
         return None, "stop u objetivo fuera de rango"
     order_type = mt5.ORDER_TYPE_BUY if side == 1 else mt5.ORDER_TYPE_SELL
     adverse = price + side * settings.DESVIACION_PUNTOS * info.point
-    pnl = mt5.order_calc_profit(order_type, SYMBOL, 1.0, adverse, sl)
+    pnl = mt5.order_calc_profit(order_type, symbol, 1.0, adverse, sl)
     if pnl is None or not math.isfinite(pnl) or pnl >= 0:
         return None, "pérdida al stop no verificable"
     budget = equity * settings.RIESGO_POR_OPERACION_PCT / 100
-    loss = -pnl + FEE_PER_LOT
+    loss = -pnl + fee_per_lot
     volume_step = Decimal(str(info.volume_step))
     desired = Decimal(str(min(info.volume_max, budget / loss)))
     volume = float((desired / volume_step).to_integral_value(rounding=ROUND_DOWN) * volume_step)
@@ -116,10 +119,10 @@ def make_order(mt5, equity, info, quote, side, width):
     if mode is None:
         return None, "modo de llenado incompatible"
     return {
-        "action": mt5.TRADE_ACTION_DEAL, "symbol": SYMBOL, "type": order_type,
-        "volume": volume, "price": price, "sl": sl, "tp": tp, "magic": MAGIC,
+        "action": mt5.TRADE_ACTION_DEAL, "symbol": symbol, "type": order_type,
+        "volume": volume, "price": price, "sl": sl, "tp": tp, "magic": magic,
         "deviation": settings.DESVIACION_PUNTOS, "type_filling": mode,
-        "comment": "demo ustec ruptura",
+        "comment": "demo ustec ruptura" if symbol == SYMBOL else f"demo {symbol}",
     }, None
 
 

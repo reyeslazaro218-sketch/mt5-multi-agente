@@ -95,3 +95,12 @@ directorio con `--compartido RUTA` en ambos. Cada perfil necesita su propio
 directorio `--estado`. Los dos aplican un freno diario común de 2% y solo
 permiten una exposición a la vez. Si queda `orden_compartida.json` en la
 carpeta común, se bloquean nuevas entradas hasta conciliar el estado en MT5.
+
+### Perfiles por símbolo en demo
+
+El módulo `python.demo_estudio` requiere los mismos argumentos de cuenta,
+estado y carpeta compartida que el perfil USTEC. Con `--enviar` habilita el
+retroceso M5 de oro en la mañana de Nueva York, el retroceso M15/H1 de
+EURUSD y la ruptura fallida de Londres en GBPUSD. BTCUSD registra cruces
+EMA/RSI M1 en observación. Se permite como máximo un intento diario por
+símbolo de este módulo y una sola exposición para todos los perfiles.
