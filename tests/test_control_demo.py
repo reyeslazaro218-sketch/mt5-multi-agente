@@ -40,3 +40,15 @@ def test_freno_diario_compartido(tmp_path):
     assert not b.riesgo(cuenta)
     cuenta.equity = 1000.
     assert not a.riesgo(cuenta)
+
+
+def test_fill_sin_posicion_visible_no_libera_envios(tmp_path):
+    control = ControlDemo(tmp_path / "a", tmp_path / "compartido")
+    mt5 = Mock(TRADE_RETCODE_DONE=10009)
+    mt5.order_send.return_value = SimpleNamespace(retcode=10009)
+    mt5.positions_get.return_value = ()
+    with control.entrada() as disponible:
+        assert disponible
+        control.enviar(mt5, {"symbol": "USTEC"})
+    with control.entrada() as disponible:
+        assert not disponible

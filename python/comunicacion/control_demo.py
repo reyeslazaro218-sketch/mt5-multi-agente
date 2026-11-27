@@ -48,9 +48,15 @@ class ControlDemo:
             file.flush()
             os.fsync(file.fileno())
         result = terminal.order_send(orden)
-        if result is not None and result.retcode not in (
+        if result is None or result.retcode in (
             terminal.TRADE_RETCODE_TIMEOUT, terminal.TRADE_RETCODE_CONNECTION,
             terminal.TRADE_RETCODE_PLACED,
         ):
-            self.pending.unlink()
+            return result
+        if result.retcode in (terminal.TRADE_RETCODE_DONE, terminal.TRADE_RETCODE_DONE_PARTIAL):
+            positions = terminal.positions_get(symbol=orden["symbol"])
+            if not positions:
+                # El siguiente perfil debe esperar si el terminal aún no muestra el fill.
+                return result
+        self.pending.unlink()
         return result
