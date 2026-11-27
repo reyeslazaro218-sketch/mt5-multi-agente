@@ -17,7 +17,6 @@
 input string InpHost          = "127.0.0.1";
 input int    InpPuertoDatos   = 5556;   // PUB: MT5 -> Python
 input int    InpPuertoComando = 5555;   // REQ: MT5 <-> Python
-input bool   InpSoloDemo      = true;   // Bloquea operar en cuenta real
 input long   InpMagic         = 20260101;
 input int    InpPollMs        = 200;
 
@@ -29,13 +28,14 @@ Socket   *g_pub;
 Socket   *g_req;
 CTrade    g_trade;
 datetime  g_ultimaVela[];
+string g_respuesta = "{}";
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(InpSoloDemo && AccountInfoInteger(ACCOUNT_TRADE_MODE) != ACCOUNT_TRADE_MODE_DEMO)
+   if(AccountInfoInteger(ACCOUNT_TRADE_MODE) != ACCOUNT_TRADE_MODE_DEMO)
    {
-      Print("BLOQUEADO: InpSoloDemo=true y la cuenta no es demo.");
+      Print("BLOQUEADO: La cuenta no es demo.");
       return INIT_FAILED;
    }
 
@@ -43,9 +43,7 @@ int OnInit()
    g_pub = new Socket(g_ctx, ZMQ_PUB);
    g_req = new Socket(g_ctx, ZMQ_REQ);
    g_pub.bind(StringFormat("tcp://%s:%d", InpHost, InpPuertoDatos));
-   g_req.connect(StringFormat("tcp://%s:%d", InpHost, InpPuertoComando));
-   g_req.setReceiveTimeout(100);
-   g_req.setSendTimeout(100);
+   ConfigurarComandos();
 
    int n = ArraySize(g_simbolos);
    ArrayResize(g_ultimaVela, n);
@@ -55,7 +53,7 @@ int OnInit()
 
    g_trade.SetExpertMagicNumber(InpMagic);
    EventSetMillisecondTimer(InpPollMs);
-   Print("EA_Orquestador iniciado (demo=", InpSoloDemo, ")");
+   Print("EA_Orquestador iniciado en demo");
    return INIT_SUCCEEDED;
 }
 
@@ -112,13 +110,26 @@ void PublicarDatos()
 //+------------------------------------------------------------------+
 //| Poll: pide a Python la orden pendiente y la ejecuta              |
 //+------------------------------------------------------------------+
+void ConfigurarComandos()
+{
+   g_req.setLinger(0);
+   g_req.setReceiveTimeout(100);
+   g_req.setSendTimeout(100);
+   g_req.connect(StringFormat("tcp://%s:%d", InpHost, InpPuertoComando));
+}
+
 void ConsultarOrdenes()
 {
-   ZmqMsg poll("{}");
-   if(!g_req.send(poll)) return;
-
+   ZmqMsg poll(g_respuesta);
    ZmqMsg resp;
-   if(!g_req.recv(resp)) return;
+   if(!g_req.send(poll) || !g_req.recv(resp))
+   {
+      delete g_req;
+      g_req = new Socket(g_ctx, ZMQ_REQ);
+      ConfigurarComandos();
+      return;
+   }
+   g_respuesta = "{}";
    string txt = resp.getData();
    if(StringLen(txt) < 5) return;          // "{}" = sin órdenes
 
@@ -130,26 +141,34 @@ void ConsultarOrdenes()
    double sl      = ExtraerNumero(txt, "sl");
    double tp      = ExtraerNumero(txt, "tp");
 
-   bool ok = false;
-   if(lado == "BUY")        ok = g_trade.Buy(lote, simbolo, 0, sl, tp, "multi-agente");
-   else if(lado == "SELL")  ok = g_trade.Sell(lote, simbolo, 0, sl, tp, "multi-agente");
-   else if(lado == "CLOSE") ok = CerrarPosiciones(simbolo);
-
-   Print("Orden ", lado, " ", simbolo, " lote=", lote, " ok=", ok,
-         " retcode=", g_trade.ResultRetcode());
-}
-
-bool CerrarPosiciones(const string simbolo)
-{
-   bool todo = true;
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   string solicitud = ExtraerTexto(txt, "solicitud");
+   if(StringLen(solicitud) != 32) return;
+   long ahora = (long)TimeGMT() * 1000;
+   long emitida = (long)ExtraerNumero(txt, "ts");
+   bool valida = AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_DEMO
+      && AccountInfoInteger(ACCOUNT_LOGIN) == (long)ExtraerNumero(txt, "cuenta")
+      && AccountInfoString(ACCOUNT_SERVER) == ExtraerTexto(txt, "servidor")
+      && emitida > 0 && ahora >= emitida - 1000 && ahora - emitida < 3000
+      && lote > 0 && sl > 0 && tp > 0 && (lado == "BUY" || lado == "SELL");
+   int retcode = 0;
+   ulong ticket = 0;
+   double volumen = 0;
+   if(valida && g_trade.SetTypeFillingBySymbol(simbolo))
    {
-      ulong tk = PositionGetTicket(i);
-      if(PositionGetString(POSITION_SYMBOL) == simbolo &&
-         PositionGetInteger(POSITION_MAGIC) == InpMagic)
-         todo = g_trade.PositionClose(tk) && todo;
+      g_trade.SetDeviationInPoints(10);
+      if(lado == "BUY") g_trade.Buy(lote, simbolo, 0, sl, tp, "multi-agente");
+      else              g_trade.Sell(lote, simbolo, 0, sl, tp, "multi-agente");
+      retcode = (int)g_trade.ResultRetcode();
+      ticket = g_trade.ResultOrder();
+      volumen = g_trade.ResultVolume();
    }
-   return todo;
+   bool ok = retcode == TRADE_RETCODE_DONE || retcode == TRADE_RETCODE_DONE_PARTIAL
+             || retcode == TRADE_RETCODE_PLACED;
+   g_respuesta = StringFormat(
+      "{\"tipo\":\"respuesta\",\"version\":1,\"solicitud\":\"%s\",\"ok\":%s,\"ticket\":%I64u,\"volumen\":%.8f,\"retcode\":%d,\"error\":\"%s\"}",
+      solicitud, ok ? "true" : "false", ticket, volumen, retcode,
+      ok ? "" : "rechazada por el EA o MT5");
+   Print("Orden ", solicitud, " ", lado, " ", simbolo, " retcode=", retcode);
 }
 
 //+------------------------------------------------------------------+

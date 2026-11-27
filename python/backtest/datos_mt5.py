@@ -73,3 +73,18 @@ def descargar_todos(desde: datetime, hasta: datetime) -> dict[str, list[dict]]:
         }
     finally:
         mt5.shutdown()
+
+
+def descargar_ticks(mt5, simbolo_broker: str, desde: datetime, hasta: datetime) -> list[dict]:
+    """Obtiene los cambios de bid y ask para reconstruir precios ejecutables."""
+    if desde.utcoffset() is None or hasta.utcoffset() is None or desde >= hasta:
+        raise ValueError("Indique un intervalo válido con zona horaria")
+    if not mt5.symbol_select(simbolo_broker, True):
+        raise ErrorMT5(f"Símbolo no disponible: {simbolo_broker}")
+    ticks = mt5.copy_ticks_range(simbolo_broker, desde, hasta, mt5.COPY_TICKS_INFO)
+    if ticks is None or not len(ticks):
+        raise ErrorMT5(f"Sin ticks para {simbolo_broker}: {mt5.last_error()}")
+    return [
+        {"ts": int(t["time_msc"]), "bid": float(t["bid"]), "ask": float(t["ask"])}
+        for t in ticks if 0 < t["bid"] <= t["ask"]
+    ]

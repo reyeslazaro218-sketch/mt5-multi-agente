@@ -52,3 +52,7 @@ VALOR_POR_UNIDAD = {
 LOTE_MINIMO = 0.01
 LOTE_MAXIMO = 1.0
 LOTE_PASO = 0.01
+
+# Límite entre el cálculo de riesgo y la recepción en el EA.
+ORDEN_VIGENCIA_MS = 3000
+DESVIACION_PUNTOS = 10

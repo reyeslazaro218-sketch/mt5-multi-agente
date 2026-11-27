@@ -34,3 +34,15 @@ mt5-multi-agente/
 ## Aviso
 
 El trading conlleva riesgo de pérdida de capital. Probar siempre en cuenta demo antes de operar en real.
+
+### Sesión demo y recuperación de órdenes
+
+Configura `MT5_PATH` con la ruta al `terminal64.exe` de la instancia que
+ejecuta el EA. Inicia sesión en demo y recompila el EA al actualizar Python.
+El proceso Python consulta el patrimonio y las posiciones a través de la API
+local de MetaTrader 5. La referencia diaria se inicializa en la primera
+evaluación de entrada del día UTC, con el mayor de balance y patrimonio.
+
+Si se pierde la respuesta de una orden, se conserva `logs/orden_enviada.json`
+y se detienen nuevas entradas. Comprueba órdenes, historial y posiciones en
+MT5 antes de resolver manualmente ese registro con el proceso detenido.

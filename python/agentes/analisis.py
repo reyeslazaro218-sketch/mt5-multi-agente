@@ -28,7 +28,7 @@ def rsi(cierres, periodo):
         media_g = (media_g * (periodo - 1) + max(d, 0)) / periodo
         media_p = (media_p * (periodo - 1) + max(-d, 0)) / periodo
     if media_p == 0:
-        return 100.0
+        return 50.0 if media_g == 0 else 100.0
     rs = media_g / media_p
     return 100.0 - 100.0 / (1.0 + rs)
 
@@ -57,6 +57,12 @@ class AgenteAnalisis(Agente):
         """Recibe un mensaje `vela`; devuelve Analisis cuando hay datos suficientes."""
         simbolo = vela["simbolo"]
         buf = self.velas.setdefault(simbolo, deque(maxlen=500))
+        if buf and "ts" in vela and "ts" in buf[-1]:
+            delta = vela["ts"] - buf[-1]["ts"]
+            if delta <= 0:
+                return None
+            if delta != 60_000:
+                buf.clear()
         buf.append(vela)
         if len(buf) < self.minimo_velas:
             return None
